@@ -1,0 +1,6 @@
+{
+  "name": "Absensi Guru GPS & Face ID - SMK Komputama Pesahangan",
+  "description": "Aplikasi absensi guru berbasis validasi GPS radius sekolah, deteksi wajah kamera langsung & anti-fake GPS dengan Supabase backend.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
