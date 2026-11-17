@@ -143,7 +143,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
             >
               <Database className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Koneksi Supabase &amp; SQL</span>
+              <span>Status Database &amp; SQL</span>
             </button>
           )}
           <button

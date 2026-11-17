@@ -1,51 +1,41 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const STORAGE_KEYS = {
+const LEGACY_STORAGE_KEYS = {
   URL: 'absensi_supabase_url_custom',
   KEY: 'absensi_supabase_key_custom',
 };
 
+export const FIXED_SUPABASE_URL = 'https://pbwzpldlrnjsyjhrqbic.supabase.co';
+export const FIXED_SUPABASE_ANON_KEY = 'sb_publishable_p8Sdc6fqh0wKpko0gwSOHA_9yPymLtA';
+
+// Ensure no stale custom overrides remain in browser storage
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEYS.URL);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEYS.KEY);
+  } catch {}
+}
+
 let clientInstance: SupabaseClient | null = null;
 let realtimeChannel: any = null;
 
-// Synchronously retrieve config from localStorage or env
+// Always return permanently locked Supabase credentials
 export const getActiveSupabaseCredentials = () => {
-  const customUrl = localStorage.getItem(STORAGE_KEYS.URL)?.trim() || '';
-  const customKey = localStorage.getItem(STORAGE_KEYS.KEY)?.trim() || '';
-
-  if (customUrl && customKey && !customUrl.includes('your-project.supabase.co')) {
-    return { url: customUrl, key: customKey, isCustom: true };
-  }
-
-  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
-  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
-
-  if (envUrl && envKey && !envUrl.includes('your-project.supabase.co')) {
-    return { url: envUrl, key: envKey, isCustom: false };
-  }
-
-  return { url: '', key: '', isCustom: false };
+  return {
+    url: FIXED_SUPABASE_URL,
+    key: FIXED_SUPABASE_ANON_KEY,
+    isCustom: false,
+    isLocked: true,
+  };
 };
 
 export const isLiveSupabaseConfigured = (): boolean => {
-  const { url, key } = getActiveSupabaseCredentials();
-  return (
-    typeof url === 'string' &&
-    url !== '' &&
-    !url.includes('your-project.supabase.co') &&
-    typeof key === 'string' &&
-    key !== '' &&
-    !key.includes('your-anon-key-here')
-  );
+  return true;
 };
 
 export const getSupabaseClient = (): SupabaseClient | null => {
-  if (!isLiveSupabaseConfigured()) {
-    return null;
-  }
-  const { url, key } = getActiveSupabaseCredentials();
   if (!clientInstance) {
-    clientInstance = createClient(url, key, {
+    clientInstance = createClient(FIXED_SUPABASE_URL, FIXED_SUPABASE_ANON_KEY, {
       realtime: {
         params: {
           eventsPerSecond: 10,
@@ -118,65 +108,12 @@ export function setupRealtimeSubscription(client: SupabaseClient) {
 }
 
 /**
- * Pulls Supabase credentials from the central server so all devices share the exact same database
+ * Ensures Supabase client is initialized with the permanently locked database credentials
  */
 export async function syncCredentialsFromServer(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/supabase/config');
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.data?.url && json.data?.key) {
-        localStorage.setItem(STORAGE_KEYS.URL, json.data.url.trim());
-        localStorage.setItem(STORAGE_KEYS.KEY, json.data.key.trim());
-
-        // Reinitialize client instance
-        clientInstance = createClient(json.data.url.trim(), json.data.key.trim(), {
-          realtime: { params: { eventsPerSecond: 10 } },
-        });
-        setupRealtimeSubscription(clientInstance);
-        return true;
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to sync Supabase config from server:', e);
-  }
-  return false;
+  getSupabaseClient();
+  return true;
 }
-
-export const saveCustomSupabaseConfig = async (url: string, key: string) => {
-  localStorage.setItem(STORAGE_KEYS.URL, url.trim());
-  localStorage.setItem(STORAGE_KEYS.KEY, key.trim());
-
-  // Save to central server so EVERY device (phone/PC) accesses the same Supabase database!
-  try {
-    await fetch('/api/supabase/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: url.trim(), key: key.trim() }),
-    });
-  } catch (e) {
-    console.warn('Failed to push Supabase config to server:', e);
-  }
-
-  clientInstance = createClient(url.trim(), key.trim(), {
-    realtime: { params: { eventsPerSecond: 10 } },
-  });
-  setupRealtimeSubscription(clientInstance);
-};
-
-export const clearCustomSupabaseConfig = async () => {
-  localStorage.removeItem(STORAGE_KEYS.URL);
-  localStorage.removeItem(STORAGE_KEYS.KEY);
-  clientInstance = null;
-
-  try {
-    await fetch('/api/supabase/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: '', key: '' }),
-    });
-  } catch {}
-};
 
 export interface ConnectionTestResult {
   connected: boolean;
@@ -192,29 +129,9 @@ export interface ConnectionTestResult {
   storageReady: boolean;
 }
 
-export const testSupabaseConnection = async (
-  testUrl?: string,
-  testKey?: string
-): Promise<ConnectionTestResult> => {
-  const creds = getActiveSupabaseCredentials();
-  const targetUrl = (testUrl || creds.url || '').trim();
-  const targetKey = (testKey || creds.key || '').trim();
-
-  if (!targetUrl || !targetKey || targetUrl.includes('your-project.supabase.co')) {
-    return {
-      connected: false,
-      latencyMs: 0,
-      url: targetUrl || '(Belum diatur)',
-      error: 'URL atau Anon Key Supabase belum diatur dengan valid.',
-      tables: {
-        profiles: false,
-        school_settings: false,
-        attendance: false,
-        device_registrations: false,
-      },
-      storageReady: false,
-    };
-  }
+export const testSupabaseConnection = async (): Promise<ConnectionTestResult> => {
+  const targetUrl = FIXED_SUPABASE_URL;
+  const targetKey = FIXED_SUPABASE_ANON_KEY;
 
   const startTime = performance.now();
   try {

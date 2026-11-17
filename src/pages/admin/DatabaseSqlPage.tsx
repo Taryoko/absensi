@@ -10,10 +10,8 @@ import {
   ExternalLink,
   RefreshCw,
   Server,
-  ShieldCheck,
-  Key,
+  Lock,
   Globe,
-  HardDrive,
   Code2,
   FileCode,
   Zap,
@@ -21,8 +19,6 @@ import {
 } from 'lucide-react';
 import {
   getActiveSupabaseCredentials,
-  saveCustomSupabaseConfig,
-  clearCustomSupabaseConfig,
   testSupabaseConnection,
   ConnectionTestResult,
   isLiveSupabaseConfigured,
@@ -347,32 +343,27 @@ INSERT INTO public.school_settings (
 `;
 
 export const DatabaseSqlPage: React.FC = () => {
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseKey, setSupabaseKey] = useState('');
+  const creds = getActiveSupabaseCredentials();
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [copied, setCopied] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [isPushingData, setIsPushingData] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
   const [copiedAttendanceFix, setCopiedAttendanceFix] = useState(false);
 
-  useEffect(() => {
-    const creds = getActiveSupabaseCredentials();
-    setSupabaseUrl(creds.url);
-    setSupabaseKey(creds.key);
-  }, []);
-
   const handleTestConnection = async () => {
     setIsTesting(true);
     try {
-      const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
+      const result = await testSupabaseConnection();
       setTestResult(result);
     } finally {
       setIsTesting(false);
     }
   };
+
+  useEffect(() => {
+    handleTestConnection();
+  }, []);
 
   const handleCopyAttendanceFix = () => {
     navigator.clipboard.writeText(SQL_FIX_ATTENDANCE_CONTENT);
@@ -380,31 +371,21 @@ export const DatabaseSqlPage: React.FC = () => {
     setTimeout(() => setCopiedAttendanceFix(false), 3000);
   };
 
-  const handleSaveCredentials = async () => {
-    await saveCustomSupabaseConfig(supabaseUrl, supabaseKey);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
-    await handleTestConnection();
-  };
-
   const handleSyncAllToSupabase = async () => {
     setIsPushingData(true);
     setSyncStatusMsg(null);
     try {
-      // 1. Ensure server and client have credentials
-      await saveCustomSupabaseConfig(supabaseUrl, supabaseKey);
-
-      // 2. Push school settings
+      // 1. Push school settings
       const school = localDB.getSchoolSettings();
       await SupabaseSyncService.pushSchoolSettings(school);
 
-      // 3. Push profiles
+      // 2. Push profiles
       const profiles = localDB.getProfiles();
       for (const p of profiles) {
         await SupabaseSyncService.pushProfile(p);
       }
 
-      // 4. Push device registrations
+      // 3. Push device registrations
       const devices = localDB.getDeviceRegistrations();
       for (const d of devices) {
         await SupabaseSyncService.pushDeviceRegistration(d);
@@ -421,15 +402,6 @@ export const DatabaseSqlPage: React.FC = () => {
     } finally {
       setIsPushingData(false);
     }
-  };
-
-  const handleResetToDefault = async () => {
-    await clearCustomSupabaseConfig();
-    const creds = getActiveSupabaseCredentials();
-    setSupabaseUrl(creds.url);
-    setSupabaseKey(creds.key);
-    setTestResult(null);
-    setSyncStatusMsg(null);
   };
 
   const handleCopySql = () => {
@@ -459,9 +431,9 @@ export const DatabaseSqlPage: React.FC = () => {
             <Database className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-800">Koneksi Database Supabase &amp; Kode SQL</h1>
+            <h1 className="text-xl font-bold text-slate-800">Status Database Supabase &amp; Kode SQL</h1>
             <p className="text-xs text-slate-500">
-              Uji status koneksi ke PostgreSQL Supabase dan salin skrip DDL/RLS lengkap
+              Koneksi database utama dikunci secara permanen di sistem. Uji status tabel &amp; salin skrip SQL di sini.
             </p>
           </div>
         </div>
@@ -480,68 +452,37 @@ export const DatabaseSqlPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Section 1: Supabase Connection Test & Configurator */}
+      {/* Section 1: Locked Supabase Connection Status & Test */}
       <div className="p-6 rounded-3xl bg-white border border-slate-200/80 shadow-sm space-y-5">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
             <Globe className="w-4 h-4 text-emerald-600" />
-            <span>1. Pengujian Koneksi Supabase Database</span>
+            <span>1. Status Koneksi Database Supabase (Terkunci Permanen)</span>
           </h2>
-          <span className="text-[11px] text-slate-500">PostgreSQL + Auth + Storage</span>
+          <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1">
+            <Lock className="w-3 h-3" />
+            <span>Konfigurasi Sistem Tetap</span>
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Globe className="w-3.5 h-3.5 text-slate-400" />
-              <span>Project URL Supabase</span>
-            </label>
-            <input
-              type="text"
-              value={supabaseUrl}
-              onChange={(e) => {
-                const raw = e.target.value;
-                const clean = raw.trim()
-                  .replace(/\/rest\/v1\/?.*$/, '')
-                  .replace(/\/auth\/v1\/?.*$/, '')
-                  .replace(/\/storage\/v1\/?.*$/, '')
-                  .replace(/\/+$/, '');
-                setSupabaseUrl(clean);
-              }}
-              placeholder="https://xyzabcdefghijklmn.supabase.co"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            <span className="text-[10px] text-slate-400 mt-1 block">
-              Format: <code>https://&lt;project-id&gt;.supabase.co</code> (tanpa /rest/v1/)
-            </span>
+        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Endpoint Database Aktif</span>
+            </p>
+            <p className="font-mono text-xs text-slate-800 break-all">{creds.url}</p>
+            <p className="text-[11px] text-slate-500">
+              Kredensial Project URL dan Public Key telah ditetapkan secara permanen di sistem dan tidak dapat diubah melalui menu Admin.
+            </p>
           </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                <Key className="w-3.5 h-3.5 text-slate-400" />
-                <span>Anon Key (Public API Key)</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="text-[10px] text-blue-600 hover:underline"
-              >
-                {showKey ? 'Sembunyikan' : 'Tampilkan'}
-              </button>
-            </div>
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={supabaseKey}
-              onChange={(e) => setSupabaseKey(e.target.value)}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
+          <span className="self-start sm:self-center shrink-0 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+            Terkunci &amp; Aktif
+          </span>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 pt-2">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           <button
             type="button"
             onClick={handleTestConnection}
@@ -554,15 +495,6 @@ export const DatabaseSqlPage: React.FC = () => {
 
           <button
             type="button"
-            onClick={handleSaveCredentials}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
-          >
-            <HardDrive className="w-3.5 h-3.5" />
-            <span>Simpan &amp; Terapkan Kredensial</span>
-          </button>
-
-          <button
-            type="button"
             onClick={handleSyncAllToSupabase}
             disabled={isPushingData}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
@@ -570,20 +502,6 @@ export const DatabaseSqlPage: React.FC = () => {
             <UploadCloud className={`w-3.5 h-3.5 ${isPushingData ? 'animate-pulse' : ''}`} />
             <span>{isPushingData ? 'Mengunggah ke Supabase...' : 'Unggah Data Saat Ini ke Supabase'}</span>
           </button>
-
-          <button
-            type="button"
-            onClick={handleResetToDefault}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all"
-          >
-            <span>Reset ke Default</span>
-          </button>
-
-          {saveSuccess && (
-            <span className="text-xs text-emerald-600 font-bold flex items-center gap-1 animate-in fade-in ml-2">
-              <Check className="w-4 h-4" /> Kredensial disimpan &amp; diterapkan ke semua perangkat!
-            </span>
-          )}
         </div>
 
         {syncStatusMsg && (
@@ -765,11 +683,11 @@ export const DatabaseSqlPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Section 3: Step-by-Step Supabase Guide */}
+      {/* Section 4: Step-by-Step Supabase Guide */}
       <div className="p-6 rounded-3xl bg-white border border-slate-200/80 shadow-sm space-y-4">
         <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
           <Zap className="w-4 h-4 text-amber-500" />
-          <span>3. Panduan 4 Langkah Menghubungkan Supabase</span>
+          <span>4. Panduan Pemeliharaan Skema Supabase</span>
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
@@ -777,7 +695,7 @@ export const DatabaseSqlPage: React.FC = () => {
             <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-xs">
               1
             </div>
-            <h3 className="font-bold text-slate-800">Buat Project Supabase</h3>
+            <h3 className="font-bold text-slate-800">Buka Dashboard Supabase</h3>
             <p className="text-slate-600 text-[11px]">
               Kunjungi{' '}
               <a
@@ -788,7 +706,7 @@ export const DatabaseSqlPage: React.FC = () => {
               >
                 supabase.com <ExternalLink className="w-2.5 h-2.5" />
               </a>
-              , buat organisasi &amp; project baru dengan region terdekat (misal: Singapore).
+              {' '}dan pilih project aktif yang sudah terhubung dengan aplikasi.
             </p>
           </div>
 
@@ -809,19 +727,19 @@ export const DatabaseSqlPage: React.FC = () => {
             </div>
             <h3 className="font-bold text-slate-800">Storage Bucket Foto</h3>
             <p className="text-slate-600 text-[11px]">
-              Skrip SQL otomatis membuat bucket <code>attendance-photos</code> dengan RLS aman agar guru hanya
-              bisa mengakses foto miliknya sendiri.
+              Skrip SQL otomatis membuat bucket <code>attendance-photos</code> dengan RLS aman agar foto absensi
+              tersimpan terpusat.
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-xs">
+            <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center text-xs">
               4
             </div>
-            <h3 className="font-bold text-slate-800">Salin Kredensial API</h3>
+            <h3 className="font-bold text-slate-800">Koneksi Terkunci Permanen</h3>
             <p className="text-slate-600 text-[11px]">
-              Di Supabase, buka <strong>Project Settings</strong> &gt; <strong>API</strong>. Salin Project URL
-              dan Anon Key ke formulir di atas lalu klik <strong>Uji Koneksi &amp; Simpan</strong>.
+              Kredensial API sudah tertanam permanen di sistem. Gunakan tombol <strong>Uji Koneksi Sekarang</strong>{' '}
+              untuk memastikan seluruh tabel berstatus aktif.
             </p>
           </div>
         </div>

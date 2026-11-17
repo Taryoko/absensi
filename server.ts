@@ -95,45 +95,40 @@ function writeDatabase(data: any) {
   }
 }
 
+// Fixed Supabase Database Configuration (Locked)
+const FIXED_SUPABASE_URL = 'https://pbwzpldlrnjsyjhrqbic.supabase.co';
+const FIXED_SUPABASE_ANON_KEY = 'sb_publishable_p8Sdc6fqh0wKpko0gwSOHA_9yPymLtA';
+
 // Supabase Server Instance
 let serverSupabaseClient: SupabaseClient | null = null;
 
 function getStoredSupabaseConfig() {
-  try {
-    if (fs.existsSync(SUPABASE_CONFIG_FILE)) {
-      const raw = fs.readFileSync(SUPABASE_CONFIG_FILE, 'utf-8');
-      const cfg = JSON.parse(raw);
-      if (cfg.url && (cfg.key || cfg.serviceKey) && !cfg.url.includes('your-project.supabase.co')) {
-        return {
-          url: sanitizeUrl(cfg.url),
-          key: (cfg.key || '').trim(),
-          serviceKey: (cfg.serviceKey || '').trim(),
-        };
-      }
-    }
-  } catch {}
-
-  const envUrl = process.env.VITE_SUPABASE_URL || '';
-  const envKey = process.env.VITE_SUPABASE_ANON_KEY || '';
-  if (envUrl && envKey && !envUrl.includes('your-project.supabase.co')) {
-    return { url: sanitizeUrl(envUrl), key: envKey.trim(), serviceKey: '' };
-  }
-
-  return { url: '', key: '', serviceKey: '' };
+  return {
+    url: FIXED_SUPABASE_URL,
+    key: FIXED_SUPABASE_ANON_KEY,
+    serviceKey: '',
+  };
 }
 
 function initServerSupabase() {
   const cfg = getStoredSupabaseConfig();
-  if (cfg.url && (cfg.serviceKey || cfg.key) && !cfg.url.includes('your-project.supabase.co')) {
-    try {
-      const effectiveKey = cfg.serviceKey || cfg.key;
-      serverSupabaseClient = createClient(cfg.url, effectiveKey);
-      console.log('> Server Supabase Client initialized successfully with:', cfg.url);
-    } catch (e) {
-      console.warn('> Server Supabase Client initialization error:', e);
-      serverSupabaseClient = null;
+  try {
+    // Keep supabase_config.json synced with the locked credentials
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-  } else {
+    fs.writeFileSync(
+      SUPABASE_CONFIG_FILE,
+      JSON.stringify({ url: FIXED_SUPABASE_URL, key: FIXED_SUPABASE_ANON_KEY }, null, 2),
+      'utf-8'
+    );
+  } catch {}
+
+  try {
+    serverSupabaseClient = createClient(cfg.url, cfg.key);
+    console.log('> Server Supabase Client initialized (FIXED) with:', cfg.url);
+  } catch (e) {
+    console.warn('> Server Supabase Client initialization error:', e);
     serverSupabaseClient = null;
   }
 }
@@ -287,63 +282,22 @@ async function syncAttendanceToSupabase(record: any) {
 // REST API FOR MULTI-DEVICE PERSISTENT SYNC
 // ------------------------------------------------------------------------------
 
-// Supabase config endpoint
+// Supabase config endpoint (Read-only & Locked)
 app.get('/api/supabase/config', (_req, res) => {
-  const cfg = getStoredSupabaseConfig();
   res.json({
     success: true,
     data: {
-      url: cfg.url,
-      key: cfg.key,
-      serviceKey: cfg.serviceKey,
-      isConfigured: Boolean(cfg.url && (cfg.key || cfg.serviceKey) && !cfg.url.includes('your-project.supabase.co')),
+      url: FIXED_SUPABASE_URL,
+      isConfigured: true,
+      isFixed: true,
     },
   });
 });
 
-app.post('/api/supabase/config', async (req, res) => {
-  const { url, key, serviceKey } = req.body;
-  const cleanUrl = sanitizeUrl(url || '');
-  const cleanKey = (key || '').trim();
-  const cleanServiceKey = (serviceKey || '').trim();
-
-  fs.writeFileSync(
-    SUPABASE_CONFIG_FILE,
-    JSON.stringify({ url: cleanUrl, key: cleanKey, serviceKey: cleanServiceKey }, null, 2),
-    'utf-8'
-  );
-
-  initServerSupabase();
-
-  // Test connection & trigger initial push
-  let isConnected = false;
-  let testError = '';
-  if (serverSupabaseClient && cleanUrl) {
-    try {
-      const { error } = await serverSupabaseClient.from('school_settings').select('id').limit(1);
-      isConnected = !error;
-      if (error) testError = error.message;
-
-      // If connected, sync existing school settings to Supabase
-      if (isConnected) {
-        const db = readDatabase();
-        if (db.school) {
-          syncSchoolToSupabase(db.school).catch(() => {});
-        }
-        if (Array.isArray(db.profiles)) {
-          for (const p of db.profiles) {
-            syncProfileToSupabase(p).catch(() => {});
-          }
-        }
-      }
-    } catch (e: any) {
-      testError = e.message;
-    }
-  }
-
-  res.json({
-    success: true,
-    data: { url: cleanUrl, key: cleanKey, serviceKey: cleanServiceKey, isConnected, testError },
+app.post('/api/supabase/config', (_req, res) => {
+  res.status(403).json({
+    success: false,
+    message: 'Koneksi database Supabase dikunci secara permanen oleh sistem dan tidak dapat diubah dari panel Admin.',
   });
 });
 
